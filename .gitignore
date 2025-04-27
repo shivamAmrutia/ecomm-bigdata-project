@@ -1,0 +1,15 @@
+data/2019-Nov.csv
+data/2019-Oct.csv
+data/scaledData-2019-Nov.csv
+data/archive.zip
+
+# Or ignore specific data file
+*.csv
+*.tsv
+*.json
+*.parquet
+*.zip
+
+# Optional: Ignore hidden system files
+.DS_Store
+Thumbs.db
