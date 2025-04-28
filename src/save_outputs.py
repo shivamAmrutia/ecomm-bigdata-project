@@ -28,10 +28,11 @@ def save_model_metadata(model, auc_score, output_path):
     import json
     import os
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    param_map = model.extractParamMap()
+    param_dict = {str(k.name): v for k, v in param_map.items()}
+
     metadata = {
-        "numTrees": model.getNumTrees,
-        "maxDepth": model.getOrDefault("maxDepth"),
-        "maxBins": model.getOrDefault("maxBins"),
+        "model_params": param_dict,
         "AUC": auc_score
     }
     with open(output_path, "w") as f:
