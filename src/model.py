@@ -306,8 +306,7 @@ def manual_grid_search_nb(train_df, test_df, save_dir="D:/ecomm-bigdata-project/
     param_grid = [
         (1.0, "multinomial"),
         (0.5, "multinomial"),
-        (1.0, "bernoulli"),
-        (0.5, "bernoulli")
+        (2.0, "multinomial")
     ]  # (smoothing, modelType)
 
     evaluator = BinaryClassificationEvaluator(labelCol="label")
