@@ -2,6 +2,7 @@ data/2019-Nov.csv
 data/2019-Oct.csv
 data/scaledData-2019-Nov.csv
 data/archive.zip
+output
 
 # Or ignore specific data file
 *.csv

@@ -4,7 +4,7 @@ def save_predictions(predictions_df, output_path):
     """
     import os
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
-    predictions_df.select("user_session", "prediction", "probability") \
+    predictions_df.select("user_session", "num_views", "num_cart_adds", "label", "prediction", "probability", "session_duration", "avg_price") \
                   .toPandas() \
                   .to_csv(output_path, index=False)
     print(f"✅ Predictions saved: {output_path}")

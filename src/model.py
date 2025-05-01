@@ -8,54 +8,6 @@ import pandas as pd
 import os
 
 
-def train_random_forest(train_df, features_col="features", label_col="label", numTrees=100, maxDepth=5, maxBins=32):
-    """
-    Trains a Random Forest model on the provided training DataFrame.
-    """
-    rf = RandomForestClassifier(featuresCol=features_col, labelCol=label_col,
-                                 numTrees=numTrees, maxDepth=maxDepth, maxBins=maxBins)
-    model = rf.fit(train_df)
-    return model
-
-def train_logistic_regression(train_df, features_col="features", label_col="label", maxIter=100, regParam=0.0, elasticNetParam=0.0):
-    """
-    Trains a Logistic Regression model on the provided training DataFrame.
-    """
-    lr = LogisticRegression(featuresCol=features_col, labelCol=label_col,
-                             maxIter=maxIter, regParam=regParam, elasticNetParam=elasticNetParam)
-    model = lr.fit(train_df)
-    return model
-
-def train_decision_tree(train_df, features_col="features", label_col="label", maxDepth=5, maxBins=32):
-    """
-    Trains a Decision Tree model on the provided training DataFrame.
-    """
-    dt = DecisionTreeClassifier(featuresCol=features_col, labelCol=label_col,
-                                 maxDepth=maxDepth, maxBins=maxBins)
-    model = dt.fit(train_df)
-    return model
-
-def train_gbt(train_df, features_col="features", label_col="label", maxIter=100, maxDepth=5, maxBins=32):
-    """
-    Trains a Gradient-Boosted Trees (GBT) model on the provided training DataFrame.
-    """
-    gbt = GBTClassifier(featuresCol=features_col, labelCol=label_col,
-                        maxIter=maxIter, maxDepth=maxDepth, maxBins=maxBins)
-    model = gbt.fit(train_df)
-    return model
-
-def train_naive_bayes(train_df, features_col="features", label_col="label", smoothing=1.0, modelType="multinomial"):
-    """
-    Trains a Naive Bayes model on the provided training DataFrame.
-    
-    `modelType` can be 'multinomial' (default) or 'bernoulli'.
-    """
-    nb = NaiveBayes(featuresCol=features_col, labelCol=label_col,
-                    smoothing=smoothing, modelType=modelType)
-    model = nb.fit(train_df)
-    return model
-
-
 def evaluate_model(model, test_df, label_col="label"):
     """
     Evaluates a trained model using AUC metric on test dataset.
@@ -79,49 +31,49 @@ def pick_best_model_from_grid(results_csv_path, base_save_dir):
     df = pd.read_csv(results_csv_path)
     best_row = df.loc[df['AUC'].idxmax()]
 
-    numTrees, maxDepth, maxBins = best_row['numTrees'], best_row['maxDepth'], best_row['maxBins']
-    best_model_name = f"rf_{int(numTrees)}_{int(maxDepth)}_{int(maxBins)}"
+    best_model_name = ""
+    for col in df.columns:
+        best_model_name += str(int(best_row[col])) + "_"
+    
+    best_model_name = best_model_name[:-1]
 
     model_dir = os.path.join(base_save_dir, best_model_name)
 
     paths = {
-        "predictions": os.path.join(model_dir, f"{best_model_name}_predictions.csv"),
-        "feature_importances": os.path.join(model_dir, f"{best_model_name}_feature_importances.csv"),
-        "metadata": os.path.join(model_dir, f"{best_model_name}_metadata.json"),
+        "predictions": os.path.join(model_dir, f"predictions.csv"),
+        "feature_importances": os.path.join(model_dir, f"feature_importances.csv"),
+        "metadata": os.path.join(model_dir, f"metadata.json"),
         "model_name": best_model_name,
         "AUC": best_row["AUC"]
     }
 
     print(f"🏆 Best Model: {best_model_name} with AUC: {best_row['AUC']:.4f}")
-    return paths
+    # returns like "50_5_32_0,0.9996,rf"
+    return str(best_model_name) +"," + str(best_row['AUC']) + "," + str(base_save_dir.split('/')[2])
 
 # Random Forest
 
-def manual_grid_search_rf(train_df, test_df, save_dir="D:/ecomm-bigdata-project/output/rf/"):
+def manual_grid_search_rf(train_df, test_df, save_dir="../output/rf/"):
     """
     Manually trains Random Forest with different hyperparameters, saves model outputs after each model.
     """
-    import os
-    import pandas as pd
-    from pyspark.ml.classification import RandomForestClassifier
-    from pyspark.ml.evaluation import BinaryClassificationEvaluator
 
     print("🚀 Starting Manual Random Forest grid search with model saves...")
 
     param_grid = [
         (50, 5, 32),
         (100, 5, 32),
-        (200, 5, 32),
+        # (200, 5, 32),
         (50, 10, 32),
         (100, 10, 32),
-        (200, 10, 32),
-        (50, 20, 32),
-        (100, 20, 32),
-        (200, 20, 32),
-        (50, 5, 64),
+        # (200, 10, 32),
+        # (50, 20, 32),
+        # (100, 20, 32),
+        # (200, 20, 32),
+        # (50, 5, 64),
         (100, 5, 64),
-        (200, 5, 64),
-        (100, 10, 64),
+        # (200, 5, 64),
+        # (100, 10, 64),
         (200, 20, 64)
     ]
 
@@ -162,22 +114,18 @@ def manual_grid_search_rf(train_df, test_df, save_dir="D:/ecomm-bigdata-project/
         model_dir = os.path.join(save_dir, model_name)
         os.makedirs(model_dir, exist_ok=True)
 
-        save_predictions(predictions, os.path.join(model_dir, f"{model_name}_predictions.csv"))
-        save_feature_importances(model, os.path.join(model_dir, f"{model_name}_feature_importances.csv"))
-        save_model_metadata(model, auc, os.path.join(model_dir, f"{model_name}_metadata.json"))
+        save_predictions(predictions, os.path.join(model_dir, f"predictions.csv"))
+        save_feature_importances(model, os.path.join(model_dir, f"feature_importances.csv"))
+        save_model_metadata(model, auc, os.path.join(model_dir, f"metadata.json"))
 
     print("\n✅ Manual Grid Search Complete! All outputs saved.")
 
 # Linear Regression
 
-def manual_grid_search_lr(train_df, test_df, save_dir="D:/ecomm-bigdata-project/output/lr/"):
+def manual_grid_search_lr(train_df, test_df, save_dir="../output/lr/"):
     """
     Manually trains Logistic Regression with different hyperparameters, saves model outputs after each model.
     """
-    import os
-    import pandas as pd
-    from pyspark.ml.classification import LogisticRegression
-    from pyspark.ml.evaluation import BinaryClassificationEvaluator
 
     print("🚀 Starting Manual Logistic Regression grid search...")
 
@@ -222,22 +170,18 @@ def manual_grid_search_lr(train_df, test_df, save_dir="D:/ecomm-bigdata-project/
         model_dir = os.path.join(save_dir, model_name)
         os.makedirs(model_dir, exist_ok=True)
 
-        save_predictions(predictions, os.path.join(model_dir, f"{model_name}_predictions.csv"))
-        save_model_metadata(model, auc, os.path.join(model_dir, f"{model_name}_metadata.json"))
+        save_predictions(predictions, os.path.join(model_dir, f"predictions.csv"))
+        save_model_metadata(model, auc, os.path.join(model_dir, f"metadata.json"))
 
     print("\n✅ Manual Grid Search Complete for Logistic Regression!")
 
 
 # Decision Tree
 
-def manual_grid_search_dt(train_df, test_df, save_dir="D:/ecomm-bigdata-project/output/dt/"):
+def manual_grid_search_dt(train_df, test_df, save_dir="../output/dt/"):
     """
     Manually trains Decision Tree with different hyperparameters, saves model outputs after each model.
     """
-    import os
-    import pandas as pd
-    from pyspark.ml.classification import DecisionTreeClassifier
-    from pyspark.ml.evaluation import BinaryClassificationEvaluator
 
     print("🚀 Starting Manual Decision Tree grid search...")
 
@@ -283,23 +227,19 @@ def manual_grid_search_dt(train_df, test_df, save_dir="D:/ecomm-bigdata-project/
         model_dir = os.path.join(save_dir, model_name)
         os.makedirs(model_dir, exist_ok=True)
 
-        save_predictions(predictions, os.path.join(model_dir, f"{model_name}_predictions.csv"))
-        save_feature_importances(model, os.path.join(model_dir, f"{model_name}_feature_importances.csv"))
-        save_model_metadata(model, auc, os.path.join(model_dir, f"{model_name}_metadata.json"))
+        save_predictions(predictions, os.path.join(model_dir, f"predictions.csv"))
+        save_feature_importances(model, os.path.join(model_dir, f"feature_importances.csv"))
+        save_model_metadata(model, auc, os.path.join(model_dir, f"metadata.json"))
 
     print("\n✅ Manual Grid Search Complete for Decision Tree!")
 
 
 # Naive Bayes
 
-def manual_grid_search_nb(train_df, test_df, save_dir="D:/ecomm-bigdata-project/output/nb/"):
+def manual_grid_search_nb(train_df, test_df, save_dir="../output/nb/"):
     """
     Manually trains Naive Bayes with different hyperparameters, saves model outputs after each model.
     """
-    import os
-    import pandas as pd
-    from pyspark.ml.classification import NaiveBayes
-    from pyspark.ml.evaluation import BinaryClassificationEvaluator
 
     print("🚀 Starting Manual Naive Bayes grid search...")
 
@@ -343,22 +283,18 @@ def manual_grid_search_nb(train_df, test_df, save_dir="D:/ecomm-bigdata-project/
         model_dir = os.path.join(save_dir, model_name)
         os.makedirs(model_dir, exist_ok=True)
 
-        save_predictions(predictions, os.path.join(model_dir, f"{model_name}_predictions.csv"))
-        save_model_metadata(model, auc, os.path.join(model_dir, f"{model_name}_metadata.json"))
+        save_predictions(predictions, os.path.join(model_dir, f"predictions.csv"))
+        save_model_metadata(model, auc, os.path.join(model_dir, f"metadata.json"))
 
     print("\n✅ Manual Grid Search Complete for Naive Bayes!")
 
 
 # Gradient Boost
 
-def manual_grid_search_gbt(train_df, test_df, save_dir="D:/ecomm-bigdata-project/output/gbt/"):
+def manual_grid_search_gbt(train_df, test_df, save_dir="../output/gbt/"):
     """
     Manually trains GBTClassifier with different hyperparameters, saves model outputs after each model.
     """
-    import os
-    import pandas as pd
-    from pyspark.ml.classification import GBTClassifier
-    from pyspark.ml.evaluation import BinaryClassificationEvaluator
 
     print("🚀 Starting Manual GBTClassifier grid search...")
 
@@ -403,8 +339,8 @@ def manual_grid_search_gbt(train_df, test_df, save_dir="D:/ecomm-bigdata-project
         model_dir = os.path.join(save_dir, model_name)
         os.makedirs(model_dir, exist_ok=True)
 
-        save_predictions(predictions, os.path.join(model_dir, f"{model_name}_predictions.csv"))
-        save_feature_importances(model, os.path.join(model_dir, f"{model_name}_feature_importances.csv"))
-        save_model_metadata(model, auc, os.path.join(model_dir, f"{model_name}_metadata.json"))
+        save_predictions(predictions, os.path.join(model_dir, f"predictions.csv"))
+        save_feature_importances(model, os.path.join(model_dir, f"feature_importances.csv"))
+        save_model_metadata(model, auc, os.path.join(model_dir, f"metadata.json"))
 
     print("\n✅ Manual Grid Search Complete for GBTClassifier!")
