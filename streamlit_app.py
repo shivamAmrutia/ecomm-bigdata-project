@@ -5,9 +5,9 @@ import json
 
 
 # app
-st.set_page_config(layout="wide", page_title="E-Commerce Funnel Dashboard")
+st.set_page_config(layout="wide", page_title="Dashboard")
 
-st.title("🛒 E-Commerce Behavior Dashboard")
+st.title("🛒 Customer Funnel Drop-off Analysis and Conversion Prediction ")
 
 # --- Tabs ---
 tab1, tab2 = st.tabs(["📈 Visualizations", "🔍 Simulate & Predict"])
@@ -16,14 +16,31 @@ tab1, tab2 = st.tabs(["📈 Visualizations", "🔍 Simulate & Predict"])
 with tab1:
     st.subheader("User Funnel Analysis & Behavior")
 
+    # Adding some padding for the title section
+    st.markdown("<h3 style='text-align: center;'>Visualizations of Key Insights</h3>", unsafe_allow_html=True)
+
+    # Create 2 columns layout
     col1, col2 = st.columns(2)
+
+    # --- First column with images ---
     with col1:
-        st.image("./output/figures/conversion_funnel.png", caption="Conversion Funnel", use_column_width=True)
-        st.image("./output/figures/dropoff_rate.png", caption="Drop-Off Rate", use_column_width=True)
+        st.markdown("<h5 style='text-align: center;'>Conversion Funnel</h5>", unsafe_allow_html=True)
+        st.image("./output/figures/conversion_funnel.png", use_column_width=True)
+
+        st.markdown("<h5 style='text-align: center;'>Drop-Off Rate</h5>", unsafe_allow_html=True)
+        st.image("./output/figures/dropoff_rate.png", use_column_width=True)
+
+    # --- Second column with images ---
     with col2:
-        st.image("./output/figures/purchase_probability.png", caption="Predicted Probabilities", use_column_width=True)
-        st.image("./output/figures/session_duration_vs_purchase.png", caption="Session Duration vs Purchase", use_column_width=True)
-        st.image("./output/figures/price_vs_purchase.png", caption="Price Sensitivity", use_column_width=True)
+        st.markdown("<h5 style='text-align: center;'>Predicted Probabilities</h5>", unsafe_allow_html=True)
+        st.image("./output/figures/purchase_probability.png", use_column_width=True)
+
+        st.markdown("<h5 style='text-align: center;'>Session Duration vs Purchase</h5>", unsafe_allow_html=True)
+        st.image("./output/figures/session_duration_vs_purchase.png", use_column_width=True)
+
+        st.markdown("<h5 style='text-align: center;'>Price Sensitivity</h5>", unsafe_allow_html=True)
+        st.image("./output/figures/price_vs_purchase.png", use_column_width=True)
+
 
 # --- Tab 2: Predict from Simulated Input ---
 
