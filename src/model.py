@@ -7,6 +7,9 @@ from src.save_outputs import save_predictions, save_feature_importances, save_mo
 import pandas as pd
 import os
 
+import mlflow
+import mlflow.spark
+
 
 def evaluate_model(model, test_df, label_col="label"):
     """
@@ -344,3 +347,40 @@ def manual_grid_search_gbt(train_df, test_df, save_dir="../output/gbt/"):
         save_model_metadata(model, auc, os.path.join(model_dir, f"metadata.json"))
 
     print("\n✅ Manual Grid Search Complete for GBTClassifier!")
+
+def train_and_log_mlflow(train_df, test_df,
+                         maxIter: int,
+                         regParam: float = 0.0,
+                         elasticNetParam: float = 0.0):
+    # 1) Point at our server & experiment
+    mlflow.set_tracking_uri("http://localhost:5000")
+    mlflow.set_experiment("test_lr_experiment")
+
+    with mlflow.start_run():
+        # 2) Log your params
+        mlflow.log_param("maxIter", maxIter)
+        mlflow.log_param("regParam", regParam)
+        mlflow.log_param("elasticNetParam", elasticNetParam)
+
+        # 3) Train
+        lr = LogisticRegression(
+            featuresCol="features",
+            labelCol="label",
+            maxIter=maxIter,
+            regParam=regParam,
+            elasticNetParam=elasticNetParam
+        )
+        model = lr.fit(train_df)
+
+        # 4) Predict & evaluate
+        preds = model.transform(test_df)
+        evaluator = BinaryClassificationEvaluator(labelCol="label",
+                                                  rawPredictionCol="probability",
+                                                  metricName="areaUnderROC")
+        auc = evaluator.evaluate(preds)
+        mlflow.log_metric("auc", float(auc))
+
+        # 5) Log the Spark model as an artifact
+        mlflow.spark.log_model(model, artifact_path="spark-model")
+
+        print(f"✔ Logged run with AUC={auc:.4f}")
