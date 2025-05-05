@@ -45,21 +45,21 @@ with tab1:
 # --- Tab 2: Predict from Simulated Input ---
 
 # getting best model and params
-# with open("./output/best_params.json") as f:
-#     best_model_and_params = json.load(f)
-# model = best_model_and_params.get("model")
-# params = best_model_and_params.get("params")
+with open("./output/best_params.json") as f:
+    best_model_and_params = json.load(f)
+model = best_model_and_params.get("model")
+params = best_model_and_params.get("params")
 
-# with tab2:
-#     st.subheader("Simulate a User Session")
+with tab2:
+    st.subheader("Simulate a User Session")
 
-#     num_views = st.slider("Number of Product Views", 0, 20, 3)
-#     num_cart_adds = st.slider("Number of Cart Adds", 0, 10, 1)
-#     num_purchases = st.slider("Number of Past Purchases in Session", 0, 3, 0)
-#     avg_price = st.number_input("Average Product Price Viewed", 10.0, 1000.0, 150.0)
+    num_views = st.slider("Number of Product Views", 0, 20, 3)
+    num_cart_adds = st.slider("Number of Cart Adds", 0, 10, 1)
+    session_duration = st.slider("Session Duration (seconds)", 0, 8000, 500)
+    avg_price = st.number_input("Average Product Price Viewed", 10.0, 1000.0, 150.0)
     
-#     features = [num_views, num_cart_adds, num_purchases, avg_price]
+    features = [num_views, num_cart_adds, session_duration, avg_price]
 
-#     if st.button("Predict Purchase Likelihood"):
-#         prob = predict_purchase(features, model, params)
-#         st.success(f"🧠 Predicted Probability of Purchase: **{prob:.2%}**")
+    if st.button("Predict Purchase Likelihood"):
+        prob = predict_purchase(features, model, params)
+        st.success(f"🧠 Predicted Probability of Purchase: **{prob:.2%}**")

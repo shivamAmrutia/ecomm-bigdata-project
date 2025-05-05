@@ -34,25 +34,27 @@ def pick_best_model_from_grid(results_csv_path, base_save_dir):
     df = pd.read_csv(results_csv_path)
     best_row = df.loc[df['AUC'].idxmax()]
 
-    best_model_name = ""
+    best_model_params = ""
     for col in df.columns:
-        best_model_name += str(int(best_row[col])) + "_"
+        best_model_params += str(int(best_row[col])) + "_"
     
-    best_model_name = best_model_name[:-1]
+    best_model_params = best_model_params[:-1]
 
-    model_dir = os.path.join(base_save_dir, best_model_name)
+    model_dir = os.path.join(base_save_dir, best_model_params)
 
     paths = {
         "predictions": os.path.join(model_dir, f"predictions.csv"),
         "feature_importances": os.path.join(model_dir, f"feature_importances.csv"),
         "metadata": os.path.join(model_dir, f"metadata.json"),
-        "model_name": best_model_name,
+        "model_name": best_model_params,
         "AUC": best_row["AUC"]
     }
 
-    print(f"🏆 Best Model: {best_model_name} with AUC: {best_row['AUC']:.4f}")
+    print(f"🏆 Best Model: {best_model_params} with AUC: {best_row['AUC']:.4f}")
+
+    MLFLow_model_name = str(base_save_dir.split('/')[2]).upper() + "_Grid_Search"
     # returns like "50_5_32_0,0.9996,rf"
-    return str(best_model_name) +"," + str(best_row['AUC']) + "," + str(base_save_dir.split('/')[2])
+    return str(best_model_params) +"," + str(best_row['AUC']) + "," + MLFLow_model_name
 
 # Random Forest
 
@@ -296,10 +298,14 @@ def manual_grid_search_nb(train_df, test_df, save_dir="../output/nb/"):
 
 def manual_grid_search_gbt(train_df, test_df, save_dir="../output/gbt/"):
     """
-    Manually trains GBTClassifier with different hyperparameters, saves model outputs after each model.
+    Trains GBTClassifier with multiple hyperparameters, logs models using MLflow, and saves results.
     """
 
     print("🚀 Starting Manual GBTClassifier grid search...")
+
+    # MLflow setup
+    mlflow.set_tracking_uri("http://localhost:5000")
+    mlflow.set_experiment("GBT_Grid_Search")
 
     param_grid = [
         (50, 5, 32),
@@ -327,24 +333,33 @@ def manual_grid_search_gbt(train_df, test_df, save_dir="../output/gbt/"):
 
         print(f"🔵 Training: maxIter={maxIter}, maxDepth={maxDepth}, maxBins={maxBins}")
 
-        gbt = GBTClassifier(featuresCol="features", labelCol="label",
-                            maxIter=maxIter, maxDepth=maxDepth, maxBins=maxBins)
-        model = gbt.fit(train_df)
-        predictions = model.transform(test_df)
-        auc = evaluator.evaluate(predictions)
-        print(f"🔹 AUC: {auc:.4f}")
+        with mlflow.start_run():
+            mlflow.log_param("maxIter", maxIter)
+            mlflow.log_param("maxDepth", maxDepth)
+            mlflow.log_param("maxBins", maxBins)
 
-        new_row = pd.DataFrame([[maxIter, maxDepth, maxBins, auc]], columns=["maxIter", "maxDepth", "maxBins", "AUC"])
-        df_results = pd.concat([df_results, new_row], ignore_index=True)
-        df_results.to_csv(results_csv, index=False)
+            gbt = GBTClassifier(featuresCol="features", labelCol="label",
+                                maxIter=maxIter, maxDepth=maxDepth, maxBins=maxBins)
+            model = gbt.fit(train_df)
+            predictions = model.transform(test_df)
+            auc = evaluator.evaluate(predictions)
+            mlflow.log_metric("auc", float(auc))
+            mlflow.spark.log_model(model, artifact_path="spark-model")
 
-        model_name = f"gbt_{maxIter}_{maxDepth}_{maxBins}"
-        model_dir = os.path.join(save_dir, model_name)
-        os.makedirs(model_dir, exist_ok=True)
+            print(f"✔ Logged run with AUC={auc:.4f}")
 
-        save_predictions(predictions, os.path.join(model_dir, f"predictions.csv"))
-        save_feature_importances(model, os.path.join(model_dir, f"feature_importances.csv"))
-        save_model_metadata(model, auc, os.path.join(model_dir, f"metadata.json"))
+            # Save locally too
+            new_row = pd.DataFrame([[maxIter, maxDepth, maxBins, auc]], columns=["maxIter", "maxDepth", "maxBins", "AUC"])
+            df_results = pd.concat([df_results, new_row], ignore_index=True)
+            df_results.to_csv(results_csv, index=False)
+
+            model_name = f"gbt_{maxIter}_{maxDepth}_{maxBins}"
+            model_dir = os.path.join(save_dir, model_name)
+            os.makedirs(model_dir, exist_ok=True)
+
+            save_predictions(predictions, os.path.join(model_dir, f"predictions.csv"))
+            save_feature_importances(model, os.path.join(model_dir, f"feature_importances.csv"))
+            save_model_metadata(model, auc, os.path.join(model_dir, f"metadata.json"))
 
     print("\n✅ Manual Grid Search Complete for GBTClassifier!")
 
