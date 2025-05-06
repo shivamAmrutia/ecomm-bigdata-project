@@ -1,13 +1,36 @@
+# def save_predictions(predictions_df, output_path):
+#     """
+#     Saves prediction results to CSV.
+#     """
+#     import os
+#     os.makedirs(os.path.dirname(output_path), exist_ok=True)
+#     predictions_df.select("user_session", "num_views", "num_cart_adds", "label", "prediction", "probability", "session_duration", "avg_price") \
+#                   .toPandas() \
+#                   .to_csv(output_path, index=False)
+#     print(f"✅ Predictions saved: {output_path}")
+
+from pyspark.sql.functions import udf, col
+from pyspark.sql.types import DoubleType
+
 def save_predictions(predictions_df, output_path):
     """
-    Saves prediction results to CSV.
+    Saves prediction results to CSV with extracted probability[1].
     """
-    import os
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
-    predictions_df.select("user_session", "num_views", "num_cart_adds", "label", "prediction", "probability", "session_duration", "avg_price") \
-                  .toPandas() \
-                  .to_csv(output_path, index=False)
-    print(f"✅ Predictions saved: {output_path}")
+    # UDF to extract probability of class 1
+    extract_prob = udf(lambda prob: float(prob[1]), DoubleType())
+
+    cleaned = predictions_df.withColumn("probability_class1", extract_prob(col("probability")))
+
+    selected_cols = ["user_session", "num_views", "num_cart_adds", "label",
+                     "prediction", "probability_class1", "session_duration", "avg_price"]
+
+    # Save as CSV
+    cleaned.select(*selected_cols) \
+           .toPandas() \
+           .to_csv(output_path, index=False)
+
+    print(f"✅ Predictions saved with class 1 probabilities: {output_path}")
+
 
 def save_feature_importances(model, output_path):
     """

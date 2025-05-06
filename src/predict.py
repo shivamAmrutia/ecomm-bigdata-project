@@ -16,11 +16,24 @@ def predict_purchase(features, model, params):
     experiment = mlflow.get_experiment_by_name(model)
     runs_df = mlflow.search_runs(experiment_ids=[experiment.experiment_id])
 
-    filtered = runs_df[
-    (runs_df['params.maxIter'] == str(params.split('_')[0])) &
-    (runs_df['params.maxDepth'] == str(params.split('_')[1])) &
-    (runs_df['params.maxBins'] == str(params.split('_')[2]))
-    ]
+    param1 = str(params.split('_')[0])
+    param2 = str(params.split('_')[1])
+
+    # If param3 is provided, check all 3
+    if len(params.split('_')) == 3:
+        param3 = str(params.split('_')[2])
+        filtered = runs_df[
+            (runs_df['params.param1'] == param1) &
+            (runs_df['params.param2'] == param2) &
+            (runs_df['params.param3'] == param3)
+        ]
+    else:
+        # Only check param1 and param2
+        filtered = runs_df[
+            (runs_df['params.param1'] == param1) &
+            (runs_df['params.param2'] == param2)
+        ]
+
 
     if not filtered.empty:
         run_id = filtered.iloc[0]['run_id']
