@@ -1,5 +1,8 @@
 from pyspark.sql.functions import udf, col
 from pyspark.sql.types import DoubleType
+import json
+import os
+import pandas as pd
 
 def save_predictions(predictions_df, output_path):
     """
@@ -25,8 +28,6 @@ def save_feature_importances(model, output_path):
     """
     Saves feature importances from a trained Random Forest model.
     """
-    import pandas as pd
-    import os
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     fi = model.featureImportances.toArray()
     fi_df = pd.DataFrame(fi, columns=["importance"])
@@ -37,8 +38,6 @@ def save_model_metadata(model, auc_score, output_path):
     """
     Saves model metadata and AUC to a JSON file.
     """
-    import json
-    import os
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     param_map = model.extractParamMap()
     param_dict = {str(k.name): v for k, v in param_map.items()}
