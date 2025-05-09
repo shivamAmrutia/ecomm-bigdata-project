@@ -3,6 +3,7 @@
 from pyspark.ml.classification import RandomForestClassifier, LogisticRegression, DecisionTreeClassifier, GBTClassifier, NaiveBayes
 from pyspark.ml.evaluation import BinaryClassificationEvaluator
 from pyspark.ml.tuning import ParamGridBuilder, CrossValidator
+from pyspark.ml.evaluation import MulticlassClassificationEvaluator
 from src.save_outputs import save_predictions, save_feature_importances, save_model_metadata
 import pandas as pd
 import os
@@ -369,3 +370,92 @@ def manual_grid_search_gbt(train_df, test_df, save_dir="../output/gbt/"):
             save_model_metadata(model, auc, os.path.join(model_dir, f"metadata.json"))
 
     print("\n✅ Manual Grid Search Complete for GBTClassifier!")
+
+
+# manual grid search for model 2
+def manual_grid_search_category(train_df, test_df, save_dir="../output/category/"):
+    print("🚀 Starting Manual Grid Search for Category Prediction...")
+
+    mlflow.set_tracking_uri("http://localhost:5000")
+    mlflow.set_experiment("category")
+
+    os.makedirs(save_dir, exist_ok=True)
+    results_csv = os.path.join(save_dir, "grid_search_results.csv")
+
+    # Param grid for each model
+    param_configs = [
+        {
+            "name": "rf",
+            "estimator": RandomForestClassifier,
+            "params": [(50, 5), (100, 10)],
+            "param_names": ["numTrees", "maxDepth"]
+        },
+        {
+            "name": "lr",
+            "estimator": LogisticRegression,
+            "params": [(50,), (100,)],
+            "param_names": ["maxIter"]
+        },
+        {
+            "name": "gbt",
+            "estimator": GBTClassifier,
+            "params": [(50, 5), (100, 10)],
+            "param_names": ["maxIter", "maxDepth"]
+        },
+        {
+            "name": "dt",
+            "estimator": DecisionTreeClassifier,
+            "params": [(5,), (10,)],
+            "param_names": ["maxDepth"]
+        }
+    ]
+
+    evaluator = MulticlassClassificationEvaluator(labelCol="label", metricName="accuracy")
+
+    if os.path.exists(results_csv):
+        df_results = pd.read_csv(results_csv)
+        tried = set(tuple(row) for row in df_results[["model", "params"]].values)
+    else:
+        df_results = pd.DataFrame(columns=["model", "params", "accuracy"])
+        tried = set()
+
+    for config in param_configs:
+        for param_set in config["params"]:
+            param_key = (config["name"], str(param_set))
+            if param_key in tried:
+                print(f"⏩ Skipping {param_key}")
+                continue
+
+            print(f"🔵 Training {config['name']} with {param_set}")
+            with mlflow.start_run():
+                # Set up model with dynamic kwargs
+                kwargs = dict(zip(config["param_names"], param_set))
+                model = config["estimator"](
+                    labelCol="label", featuresCol="features", **kwargs
+                )
+                mlflow.log_params(kwargs)
+                mlflow.log_param("model", config["name"])
+
+                trained_model = model.fit(train_df)
+                preds = trained_model.transform(test_df)
+                acc = evaluator.evaluate(preds)
+                mlflow.log_metric("accuracy", float(acc))
+                mlflow.spark.log_model(trained_model, artifact_path="spark-model")
+
+                # Save results
+                model_name = f"{config['name']}_" + "_".join(map(str, param_set))
+                model_dir = os.path.join(save_dir, model_name)
+                os.makedirs(model_dir, exist_ok=True)
+
+                save_predictions(preds, os.path.join(model_dir, f"predictions.csv"))
+                save_model_metadata(trained_model, acc, os.path.join(model_dir, f"metadata.json"))
+
+                if hasattr(trained_model, "featureImportances"):
+                    save_feature_importances(trained_model, os.path.join(model_dir, f"feature_importances.csv"))
+
+                new_row = pd.DataFrame([[config["name"], str(param_set), acc]],
+                                       columns=["model", "params", "accuracy"])
+                df_results = pd.concat([df_results, new_row], ignore_index=True)
+                df_results.to_csv(results_csv, index=False)
+
+    print("✅ Category Model Grid Search Completed.")

@@ -30,7 +30,7 @@ def clean_data(df: DataFrame) -> DataFrame:
 
 
 
-def feature_engineer(df: DataFrame) -> DataFrame:
+def feature_engineer(df: DataFrame, include_labels=False) -> DataFrame:
     """
     Generates session-level features from event-level e-commerce data.
 
@@ -77,6 +77,13 @@ def feature_engineer(df: DataFrame) -> DataFrame:
         .join(top_category, on="user_session", how="left") \
         .join(diversity, on="user_session", how="left") \
         .fillna({"main_category": "unknown", "unique_categories": 0})
+    
+    if include_labels:
+        df_purchases = df.filter(F.col("event_type") == "purchase") \
+                         .withColumn("category_main", split("category_code", "\\.").getItem(0)) \
+                         .groupBy("user_session").agg(F.first("category_main").alias("label_category"))
+        session_features = session_features.join(df_purchases, on="user_session", how="left") \
+                                           .filter("label_category IS NOT NULL")
 
     return session_features
 
