@@ -24,6 +24,9 @@ with tab1:
 
     # --- Column 1 ---
     with col1:
+        st.markdown("<h5 style='text-align: center;'>Model Performance Scores</h5>", unsafe_allow_html=True)
+        st.image("./output/figures/model_performance_scores.png", use_column_width=True)
+
         st.markdown("<h5 style='text-align: center;'>Conversion Funnel</h5>", unsafe_allow_html=True)
         st.image("./output/figures/conversion_funnel.png", use_column_width=True)
 

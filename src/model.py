@@ -55,7 +55,7 @@ def pick_best_model_from_grid(results_csv_path, base_save_dir):
     MLFLow_model_name = str(base_save_dir.split('/')[2])
 
     # returns like "50_5_32_0,0.9996,rf"
-    return str(best_model_params) +"," + str(best_row['AUC']) + "," + MLFLow_model_name
+    return str(best_model_params) +"," + str(best_row['AUC']) + "," + MLFLow_model_name + "," + str(best_row['PR_AUC'])
 
 # Random Forest
 
@@ -69,7 +69,7 @@ def manual_grid_search_rf(train_df, test_df, save_dir="../output/rf/"):
         (50, 5, 32), (100, 5, 32), (50, 10, 32), (100, 10, 32), (100, 5, 64), (200, 20, 64)
     ]
 
-    evaluator = BinaryClassificationEvaluator(labelCol="label")
+    evaluator = BinaryClassificationEvaluator(labelCol="label", metricName= "areaUnderROC")
     os.makedirs(save_dir, exist_ok=True)
     results_csv = os.path.join(save_dir, "grid_search_results.csv")
 
@@ -77,7 +77,7 @@ def manual_grid_search_rf(train_df, test_df, save_dir="../output/rf/"):
         df_results = pd.read_csv(results_csv)
         tried_params = set(zip(df_results['param1'], df_results['param2'], df_results['param3']))
     else:
-        df_results = pd.DataFrame(columns=["param1", "param2", "param3", "AUC"])
+        df_results = pd.DataFrame(columns=["param1", "param2", "param3", "AUC", "PR_AUC"])
         tried_params = set()
 
     for param1, param2, param3 in param_grid:
@@ -97,13 +97,15 @@ def manual_grid_search_rf(train_df, test_df, save_dir="../output/rf/"):
             model = rf.fit(train_df)
             predictions = model.transform(test_df)
             auc = evaluator.evaluate(predictions)
+            pr_auc = BinaryClassificationEvaluator(labelCol="label", metricName="areaUnderPR").evaluate(predictions)
+            mlflow.log_metric("pr_auc", float(pr_auc))
             mlflow.log_metric("auc", float(auc))
             mlflow.spark.log_model(model, artifact_path="spark-model")
 
             print(f"✔ Logged run with AUC={auc:.4f}")
 
-            new_row = pd.DataFrame([[param1, param2, param3, auc]],
-                                   columns=["param1", "param2", "param3", "AUC"])
+            new_row = pd.DataFrame([[param1, param2, param3, auc, pr_auc]],
+                                   columns=["param1", "param2", "param3", "AUC", "PR_AUC"])
             df_results = pd.concat([df_results, new_row], ignore_index=True)
             df_results.to_csv(results_csv, index=False)
 
@@ -133,7 +135,7 @@ def manual_grid_search_lr(train_df, test_df, save_dir="../output/lr/"):
         (200, 0.01, 1.0)
     ]
 
-    evaluator = BinaryClassificationEvaluator(labelCol="label")
+    evaluator = BinaryClassificationEvaluator(labelCol="label", metricName="areaUnderROC")
     os.makedirs(save_dir, exist_ok=True)
     results_csv = os.path.join(save_dir, "grid_search_results.csv")
 
@@ -141,7 +143,7 @@ def manual_grid_search_lr(train_df, test_df, save_dir="../output/lr/"):
         df_results = pd.read_csv(results_csv)
         tried_params = set(zip(df_results['param1'], df_results['param2'], df_results['param3']))
     else:
-        df_results = pd.DataFrame(columns=["param1", "param2", "param3", "AUC"])
+        df_results = pd.DataFrame(columns=["param1", "param2", "param3", "AUC", "PR_AUC"])
         tried_params = set()
 
     for param1, param2, param3 in param_grid:
@@ -160,14 +162,18 @@ def manual_grid_search_lr(train_df, test_df, save_dir="../output/lr/"):
                                     maxIter=param1, regParam=param2, elasticNetParam=param3)
             model = lr.fit(train_df)
             predictions = model.transform(test_df)
+            
             auc = evaluator.evaluate(predictions)
+
+            pr_auc = BinaryClassificationEvaluator(labelCol="label", metricName="areaUnderPR").evaluate(predictions)
+            mlflow.log_metric("pr_auc", float(pr_auc))
             mlflow.log_metric("auc", float(auc))
             mlflow.spark.log_model(model, artifact_path="spark-model")
 
             print(f"✔ Logged run with AUC={auc:.4f}")
 
-            new_row = pd.DataFrame([[param1, param2, param3, auc]],
-                                   columns=["param1", "param2", "param3", "AUC"])
+            new_row = pd.DataFrame([[param1, param2, param3, auc, pr_auc]],
+                                   columns=["param1", "param2", "param3", "AUC", "PR_AUC"])
             df_results = pd.concat([df_results, new_row], ignore_index=True)
             df_results.to_csv(results_csv, index=False)
 
@@ -193,7 +199,8 @@ def manual_grid_search_dt(train_df, test_df, save_dir="../output/dt/"):
         (5, 32), (10, 32), (20, 32), (5, 64), (10, 64)
     ]
 
-    evaluator = BinaryClassificationEvaluator(labelCol="label")
+    evaluator = BinaryClassificationEvaluator(labelCol="label", metricName= "areaUnderROC")
+    
     os.makedirs(save_dir, exist_ok=True)
     results_csv = os.path.join(save_dir, "grid_search_results.csv")
 
@@ -201,7 +208,7 @@ def manual_grid_search_dt(train_df, test_df, save_dir="../output/dt/"):
         df_results = pd.read_csv(results_csv)
         tried_params = set(zip(df_results['param1'], df_results['param2']))
     else:
-        df_results = pd.DataFrame(columns=["param1", "param2", "AUC"])
+        df_results = pd.DataFrame(columns=["param1", "param2", "AUC", "PR_AUC"])
         tried_params = set()
 
     for param1, param2 in param_grid:
@@ -220,13 +227,15 @@ def manual_grid_search_dt(train_df, test_df, save_dir="../output/dt/"):
             model = dt.fit(train_df)
             predictions = model.transform(test_df)
             auc = evaluator.evaluate(predictions)
+            pr_auc = BinaryClassificationEvaluator(labelCol="label", metricName="areaUnderPR").evaluate(predictions)
             mlflow.log_metric("auc", float(auc))
+            mlflow.log_metric("pr_auc", float(pr_auc))
             mlflow.spark.log_model(model, artifact_path="spark-model")
 
             print(f"✔ Logged run with AUC={auc:.4f}")
 
-            new_row = pd.DataFrame([[param1, param2, auc]],
-                                   columns=["param1", "param2", "AUC"])
+            new_row = pd.DataFrame([[param1, param2, auc, pr_auc]],
+                                   columns=["param1", "param2", "AUC", "PR_AUC"])
             df_results = pd.concat([df_results, new_row], ignore_index=True)
             df_results.to_csv(results_csv, index=False)
 
@@ -255,7 +264,7 @@ def manual_grid_search_nb(train_df, test_df, save_dir="../output/nb/"):
         (2.0, "multinomial")
     ]
 
-    evaluator = BinaryClassificationEvaluator(labelCol="label")
+    evaluator = BinaryClassificationEvaluator(labelCol="label", metricName="areaUnderROC")
     os.makedirs(save_dir, exist_ok=True)
     results_csv = os.path.join(save_dir, "grid_search_results.csv")
 
@@ -263,7 +272,7 @@ def manual_grid_search_nb(train_df, test_df, save_dir="../output/nb/"):
         df_results = pd.read_csv(results_csv)
         tried_params = set(zip(df_results['param1'], df_results['param2']))
     else:
-        df_results = pd.DataFrame(columns=["param1", "param2", "AUC"])
+        df_results = pd.DataFrame(columns=["param1", "param2", "AUC", "PR_AUC"])
         tried_params = set()
 
     for param1, param2 in param_grid:
@@ -282,13 +291,17 @@ def manual_grid_search_nb(train_df, test_df, save_dir="../output/nb/"):
             model = nb.fit(train_df)
             predictions = model.transform(test_df)
             auc = evaluator.evaluate(predictions)
+
+            pr_auc = BinaryClassificationEvaluator(labelCol="label", metricName="areaUnderPR").evaluate(predictions)
+            mlflow.log_metric("pr_auc", float(pr_auc))
+            
             mlflow.log_metric("auc", float(auc))
             mlflow.spark.log_model(model, artifact_path="spark-model")
 
             print(f"✔ Logged run with AUC={auc:.4f}")
 
-            new_row = pd.DataFrame([[param1, param2, auc]],
-                                   columns=["param1", "param2", "AUC"])
+            new_row = pd.DataFrame([[param1, param2, auc, pr_auc]],
+                                   columns=["param1", "param2", "AUC", "PR_AUC"])
             df_results = pd.concat([df_results, new_row], ignore_index=True)
             df_results.to_csv(results_csv, index=False)
 
@@ -322,7 +335,7 @@ def manual_grid_search_gbt(train_df, test_df, save_dir="../output/gbt/"):
         (100, 10, 64)
     ]  # (maxIter, maxDepth, maxBins)
 
-    evaluator = BinaryClassificationEvaluator(labelCol="label")
+    evaluator = BinaryClassificationEvaluator(labelCol="label", metricName="areaUnderROC")
 
     os.makedirs(save_dir, exist_ok=True)
     results_csv = os.path.join(save_dir, "grid_search_results.csv")
@@ -331,7 +344,7 @@ def manual_grid_search_gbt(train_df, test_df, save_dir="../output/gbt/"):
         df_results = pd.read_csv(results_csv)
         tried_params = set(zip(df_results['param1'], df_results['param2'], df_results['param3']))
     else:
-        df_results = pd.DataFrame(columns=["param1", "param2", "param3", "AUC"])
+        df_results = pd.DataFrame(columns=["param1", "param2", "param3", "AUC", "PR_AUC"])
         tried_params = set()
 
     for param1, param2, param3 in param_grid:
@@ -351,13 +364,17 @@ def manual_grid_search_gbt(train_df, test_df, save_dir="../output/gbt/"):
             model = gbt.fit(train_df)
             predictions = model.transform(test_df)
             auc = evaluator.evaluate(predictions)
+
+            pr_auc = BinaryClassificationEvaluator(labelCol="label", metricName="areaUnderPR").evaluate(predictions)
+            mlflow.log_metric("pr_auc", float(pr_auc))
+
             mlflow.log_metric("auc", float(auc))
             mlflow.spark.log_model(model, artifact_path="spark-model")
 
             print(f"✔ Logged run with AUC={auc:.4f}")
 
             # Save locally too
-            new_row = pd.DataFrame([[param1, param2, param3, auc]], columns=["param1", "param2", "param3", "AUC"])
+            new_row = pd.DataFrame([[param1, param2, param3, auc, pr_auc]], columns=["param1", "param2", "param3", "AUC", "PR_AUC"])
             df_results = pd.concat([df_results, new_row], ignore_index=True)
             df_results.to_csv(results_csv, index=False)
 
