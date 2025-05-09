@@ -16,13 +16,13 @@ tab1, tab2 = st.tabs(["📈 Visualizations", "🔍 Simulate & Predict"])
 with tab1:
     st.subheader("User Funnel Analysis & Behavior")
 
-    # Adding some padding for the title section
+    # Section Title
     st.markdown("<h3 style='text-align: center;'>Visualizations of Key Insights</h3>", unsafe_allow_html=True)
 
-    # Create 2 columns layout
+    # Create 2-column layout
     col1, col2 = st.columns(2)
 
-    # --- First column with images ---
+    # --- Column 1 ---
     with col1:
         st.markdown("<h5 style='text-align: center;'>Conversion Funnel</h5>", unsafe_allow_html=True)
         st.image("./output/figures/conversion_funnel.png", use_column_width=True)
@@ -30,7 +30,10 @@ with tab1:
         st.markdown("<h5 style='text-align: center;'>Drop-Off Rate</h5>", unsafe_allow_html=True)
         st.image("./output/figures/dropoff_rate.png", use_column_width=True)
 
-    # --- Second column with images ---
+        st.markdown("<h5 style='text-align: center;'>Funnel Drop-off by Category</h5>", unsafe_allow_html=True)
+        st.image("./output/figures/funnel_dro_off_by_category.png", use_column_width=True)
+
+    # --- Column 2 ---
     with col2:
         st.markdown("<h5 style='text-align: center;'>Predicted Probabilities</h5>", unsafe_allow_html=True)
         st.image("./output/figures/purchase_probability.png", use_column_width=True)
@@ -41,25 +44,31 @@ with tab1:
         st.markdown("<h5 style='text-align: center;'>Price Sensitivity</h5>", unsafe_allow_html=True)
         st.image("./output/figures/price_vs_purchase.png", use_column_width=True)
 
+        st.markdown("<h5 style='text-align: center;'>Purchase Conversion Rate by Category</h5>", unsafe_allow_html=True)
+        st.image("./output/figures/purchase_conversion_rate_by_category.png", use_column_width=True)
+
 
 # --- Tab 2: Predict from Simulated Input ---
 
 # getting best model and params
-# with open("./output/best_params.json") as f:
-#     best_model_and_params = json.load(f)
-# model = best_model_and_params.get("model")
-# params = best_model_and_params.get("params")
+with open("./output/best_params.json") as f:
+    best_model_and_params = json.load(f)
+model = best_model_and_params.get("model")
+params = best_model_and_params.get("params")
 
-# with tab2:
-#     st.subheader("Simulate a User Session")
+with tab2:
+    st.subheader("Simulate a User Session")
 
-#     num_views = st.slider("Number of Product Views", 0, 20, 3)
-#     num_cart_adds = st.slider("Number of Cart Adds", 0, 10, 1)
-#     num_purchases = st.slider("Number of Past Purchases in Session", 0, 3, 0)
-#     avg_price = st.number_input("Average Product Price Viewed", 10.0, 1000.0, 150.0)
-    
-#     features = [num_views, num_cart_adds, num_purchases, avg_price]
+    num_views = st.slider("Number of Product Views", 0, 20, 3)
+    num_cart_adds = st.slider("Number of Cart Adds", 0, 10, 1)
+    session_duration = st.slider("Session Duration (seconds)", 0, 8000, 500)
+    avg_price = st.number_input("Average Product Price Viewed", 10.0, 1000.0, 150.0)
 
-#     if st.button("Predict Purchase Likelihood"):
-#         prob = predict_purchase(features, model, params)
-#         st.success(f"🧠 Predicted Probability of Purchase: **{prob:.2%}**")
+    # Add category selector (your actual labels list should come from the indexer model)
+    category_labels = ['electronics', 'appliances', 'computers', 'apparel', 'furniture', 'auto', 'construction', 'kids', 'accessories', 'sport', 'medicine', 'country_yard', 'stationery']
+    selected_category = st.selectbox("Main Category", category_labels)
+
+    if st.button("Predict Purchase Likelihood"):
+        prob = predict_purchase(num_views, num_cart_adds, session_duration, avg_price, selected_category, model, params)
+        st.success(f"🧠 Predicted Probability of Purchase: **{prob:.2%}**")
+

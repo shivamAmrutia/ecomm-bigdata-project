@@ -1,9 +1,10 @@
 # src/preprocessing.py
 
 from pyspark.sql import DataFrame
-from pyspark.sql.functions import col
+from pyspark.sql.functions import col, split
 from pyspark.sql import functions as F
 from pyspark.ml.feature import VectorAssembler
+from pyspark.sql.window import Window
 
 def load_data(file_path: str, spark_session) -> DataFrame:
     """
@@ -39,7 +40,11 @@ def feature_engineer(df: DataFrame) -> DataFrame:
     Returns:
         DataFrame: Session-level aggregated features.
     """
-    # Basic aggregates
+    # Filter nulls and extract main category
+    df = df.filter(F.col("category_code").isNotNull())
+    df = df.withColumn("category_main", split("category_code", "\\.").getItem(0))
+
+    # --- Basic session-level aggregates ---
     session_features = df.groupBy("user_session").agg(
         F.count(F.when(F.col("event_type") == "view", True)).alias("num_views"),
         F.count(F.when(F.col("event_type") == "cart", True)).alias("num_cart_adds"),
@@ -48,15 +53,30 @@ def feature_engineer(df: DataFrame) -> DataFrame:
         F.max("event_time").alias("session_end"),
         F.avg("price").alias("avg_price")
     )
-    
-    # Calculate session duration in seconds
+
+    # --- Session duration in seconds ---
     session_features = session_features.withColumn(
         "session_duration",
         (F.unix_timestamp("session_end") - F.unix_timestamp("session_start"))
     )
 
-    # Fill any nulls (for avg_price or other missing features)
-    session_features = session_features.fillna(0)
+    # --- Most frequent main category per session ---
+    category_counts = df.groupBy("user_session", "category_main").count()
+    window_spec = Window.partitionBy("user_session").orderBy(F.desc("count"))
+    ranked = category_counts.withColumn("rank", F.row_number().over(window_spec))
+    top_category = ranked.filter(F.col("rank") == 1) \
+                         .select("user_session", F.col("category_main").alias("main_category"))
+
+    # --- Category diversity per session ---
+    diversity = df.groupBy("user_session").agg(
+        F.countDistinct("category_main").alias("unique_categories")
+    )
+
+    # --- Join all ---
+    session_features = session_features \
+        .join(top_category, on="user_session", how="left") \
+        .join(diversity, on="user_session", how="left") \
+        .fillna({"main_category": "unknown", "unique_categories": 0})
 
     return session_features
 

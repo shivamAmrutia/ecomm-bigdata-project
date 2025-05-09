@@ -6,6 +6,8 @@ from pyspark.ml.tuning import ParamGridBuilder, CrossValidator
 from src.save_outputs import save_predictions, save_feature_importances, save_model_metadata
 import pandas as pd
 import os
+import mlflow
+import mlflow.spark
 
 
 def evaluate_model(model, test_df, label_col="label"):
@@ -31,272 +33,286 @@ def pick_best_model_from_grid(results_csv_path, base_save_dir):
     df = pd.read_csv(results_csv_path)
     best_row = df.loc[df['AUC'].idxmax()]
 
-    best_model_name = ""
+    best_model_params = ""
     for col in df.columns:
-        best_model_name += str(int(best_row[col])) + "_"
+        best_model_params += str(int(best_row[col])) + "_"
     
-    best_model_name = best_model_name[:-1]
+    best_model_params = best_model_params[:-1]
 
-    model_dir = os.path.join(base_save_dir, best_model_name)
+    model_dir = os.path.join(base_save_dir, best_model_params)
 
     paths = {
         "predictions": os.path.join(model_dir, f"predictions.csv"),
         "feature_importances": os.path.join(model_dir, f"feature_importances.csv"),
         "metadata": os.path.join(model_dir, f"metadata.json"),
-        "model_name": best_model_name,
+        "model_name": best_model_params,
         "AUC": best_row["AUC"]
     }
 
-    print(f"🏆 Best Model: {best_model_name} with AUC: {best_row['AUC']:.4f}")
+    print(f"🏆 Best Model: {best_model_params} with AUC: {best_row['AUC']:.4f}")
+
+    MLFLow_model_name = str(base_save_dir.split('/')[2])
+
     # returns like "50_5_32_0,0.9996,rf"
-    return str(best_model_name) +"," + str(best_row['AUC']) + "," + str(base_save_dir.split('/')[2])
+    return str(best_model_params) +"," + str(best_row['AUC']) + "," + MLFLow_model_name
 
 # Random Forest
 
 def manual_grid_search_rf(train_df, test_df, save_dir="../output/rf/"):
-    """
-    Manually trains Random Forest with different hyperparameters, saves model outputs after each model.
-    """
+    print("🚀 Starting Manual Random Forest grid search...")
 
-    print("🚀 Starting Manual Random Forest grid search with model saves...")
+    mlflow.set_tracking_uri("http://localhost:5000")
+    mlflow.set_experiment("rf")
 
     param_grid = [
-        (50, 5, 32),
-        (100, 5, 32),
-        # (200, 5, 32),
-        (50, 10, 32),
-        (100, 10, 32),
-        # (200, 10, 32),
-        # (50, 20, 32),
-        # (100, 20, 32),
-        # (200, 20, 32),
-        # (50, 5, 64),
-        (100, 5, 64),
-        # (200, 5, 64),
-        # (100, 10, 64),
-        (200, 20, 64)
+        (50, 5, 32), (100, 5, 32), (50, 10, 32), (100, 10, 32), (100, 5, 64), (200, 20, 64)
     ]
 
     evaluator = BinaryClassificationEvaluator(labelCol="label")
-
     os.makedirs(save_dir, exist_ok=True)
     results_csv = os.path.join(save_dir, "grid_search_results.csv")
 
-    # Load existing results if any
     if os.path.exists(results_csv):
         df_results = pd.read_csv(results_csv)
-        tried_params = set(zip(df_results['numTrees'], df_results['maxDepth'], df_results['maxBins']))
+        tried_params = set(zip(df_results['param1'], df_results['param2'], df_results['param3']))
     else:
-        df_results = pd.DataFrame(columns=["numTrees", "maxDepth", "maxBins", "AUC"])
+        df_results = pd.DataFrame(columns=["param1", "param2", "param3", "AUC"])
         tried_params = set()
 
-    for numTrees, maxDepth, maxBins in param_grid:
-        if (numTrees, maxDepth, maxBins) in tried_params:
-            print(f"⏩ Skipping already trained: numTrees={numTrees}, maxDepth={maxDepth}, maxBins={maxBins}")
+    for param1, param2, param3 in param_grid:
+        if (param1, param2, param3) in tried_params:
+            print(f"⏩ Skipping: param1={param1}, param2={param2}, param3={param3}")
             continue
 
-        print(f"🔵 Training: numTrees={numTrees}, maxDepth={maxDepth}, maxBins={maxBins}")
+        print(f"🔵 Training: param1={param1}, param2={param2}, param3={param3}")
 
-        rf = RandomForestClassifier(featuresCol="features", labelCol="label",
-                                     numTrees=numTrees, maxDepth=maxDepth, maxBins=maxBins)
-        model = rf.fit(train_df)
-        predictions = model.transform(test_df)
-        auc = evaluator.evaluate(predictions)
-        print(f"🔹 AUC: {auc:.4f}")
+        with mlflow.start_run():
+            mlflow.log_param("param1", param1)
+            mlflow.log_param("param2", param2)
+            mlflow.log_param("param3", param3)
 
-        # Save results
-        new_row = pd.DataFrame([[numTrees, maxDepth, maxBins, auc]], columns=["numTrees", "maxDepth", "maxBins", "AUC"])
-        df_results = pd.concat([df_results, new_row], ignore_index=True)
-        df_results.to_csv(results_csv, index=False)
+            rf = RandomForestClassifier(featuresCol="features", labelCol="label",
+                                        numTrees=param1, maxDepth=param2, maxBins=param3)
+            model = rf.fit(train_df)
+            predictions = model.transform(test_df)
+            auc = evaluator.evaluate(predictions)
+            mlflow.log_metric("auc", float(auc))
+            mlflow.spark.log_model(model, artifact_path="spark-model")
 
-        # Auto-save model outputs
-        model_name = f"rf_{numTrees}_{maxDepth}_{maxBins}"
-        model_dir = os.path.join(save_dir, model_name)
-        os.makedirs(model_dir, exist_ok=True)
+            print(f"✔ Logged run with AUC={auc:.4f}")
 
-        save_predictions(predictions, os.path.join(model_dir, f"predictions.csv"))
-        save_feature_importances(model, os.path.join(model_dir, f"feature_importances.csv"))
-        save_model_metadata(model, auc, os.path.join(model_dir, f"metadata.json"))
+            new_row = pd.DataFrame([[param1, param2, param3, auc]],
+                                   columns=["param1", "param2", "param3", "AUC"])
+            df_results = pd.concat([df_results, new_row], ignore_index=True)
+            df_results.to_csv(results_csv, index=False)
 
-    print("\n✅ Manual Grid Search Complete! All outputs saved.")
+            model_name = f"rf_{param1}_{param2}_{param3}"
+            model_dir = os.path.join(save_dir, model_name)
+            os.makedirs(model_dir, exist_ok=True)
 
-# Linear Regression
+            save_predictions(predictions, os.path.join(model_dir, f"predictions.csv"))
+            save_feature_importances(model, os.path.join(model_dir, f"feature_importances.csv"))
+            save_model_metadata(model, auc, os.path.join(model_dir, f"metadata.json"))
+
+    print("✅ Random Forest grid search completed.")
+
+
+# Logistic Regression
 
 def manual_grid_search_lr(train_df, test_df, save_dir="../output/lr/"):
-    """
-    Manually trains Logistic Regression with different hyperparameters, saves model outputs after each model.
-    """
-
     print("🚀 Starting Manual Logistic Regression grid search...")
+
+    mlflow.set_tracking_uri("http://localhost:5000")
+    mlflow.set_experiment("lr")
 
     param_grid = [
         (50, 0.0, 0.0),
         (100, 0.1, 0.0),
         (100, 0.01, 0.5),
         (200, 0.01, 1.0)
-    ]  # (maxIter, regParam, elasticNetParam)
+    ]
 
     evaluator = BinaryClassificationEvaluator(labelCol="label")
-
     os.makedirs(save_dir, exist_ok=True)
     results_csv = os.path.join(save_dir, "grid_search_results.csv")
 
     if os.path.exists(results_csv):
         df_results = pd.read_csv(results_csv)
-        tried_params = set(zip(df_results['maxIter'], df_results['regParam'], df_results['elasticNetParam']))
+        tried_params = set(zip(df_results['param1'], df_results['param2'], df_results['param3']))
     else:
-        df_results = pd.DataFrame(columns=["maxIter", "regParam", "elasticNetParam", "AUC"])
+        df_results = pd.DataFrame(columns=["param1", "param2", "param3", "AUC"])
         tried_params = set()
 
-    for maxIter, regParam, elasticNetParam in param_grid:
-        if (maxIter, regParam, elasticNetParam) in tried_params:
-            print(f"⏩ Skipping already trained: maxIter={maxIter}, regParam={regParam}, elasticNetParam={elasticNetParam}")
+    for param1, param2, param3 in param_grid:
+        if (param1, param2, param3) in tried_params:
+            print(f"⏩ Skipping: param1={param1}, param2={param2}, param3={param3}")
             continue
 
-        print(f"🔵 Training: maxIter={maxIter}, regParam={regParam}, elasticNetParam={elasticNetParam}")
+        print(f"🔵 Training: param1={param1}, param2={param2}, param3={param3}")
 
-        lr = LogisticRegression(featuresCol="features", labelCol="label",
-                                 maxIter=maxIter, regParam=regParam, elasticNetParam=elasticNetParam)
-        model = lr.fit(train_df)
-        predictions = model.transform(test_df)
-        auc = evaluator.evaluate(predictions)
-        print(f"🔹 AUC: {auc:.4f}")
+        with mlflow.start_run():
+            mlflow.log_param("param1", param1)
+            mlflow.log_param("param2", param2)
+            mlflow.log_param("param3", param3)
 
-        new_row = pd.DataFrame([[maxIter, regParam, elasticNetParam, auc]], columns=["maxIter", "regParam", "elasticNetParam", "AUC"])
-        df_results = pd.concat([df_results, new_row], ignore_index=True)
-        df_results.to_csv(results_csv, index=False)
+            lr = LogisticRegression(featuresCol="features", labelCol="label",
+                                    maxIter=param1, regParam=param2, elasticNetParam=param3)
+            model = lr.fit(train_df)
+            predictions = model.transform(test_df)
+            auc = evaluator.evaluate(predictions)
+            mlflow.log_metric("auc", float(auc))
+            mlflow.spark.log_model(model, artifact_path="spark-model")
 
-        model_name = f"lr_{maxIter}_{regParam}_{elasticNetParam}"
-        model_dir = os.path.join(save_dir, model_name)
-        os.makedirs(model_dir, exist_ok=True)
+            print(f"✔ Logged run with AUC={auc:.4f}")
 
-        save_predictions(predictions, os.path.join(model_dir, f"predictions.csv"))
-        save_model_metadata(model, auc, os.path.join(model_dir, f"metadata.json"))
+            new_row = pd.DataFrame([[param1, param2, param3, auc]],
+                                   columns=["param1", "param2", "param3", "AUC"])
+            df_results = pd.concat([df_results, new_row], ignore_index=True)
+            df_results.to_csv(results_csv, index=False)
 
-    print("\n✅ Manual Grid Search Complete for Logistic Regression!")
+            model_name = f"lr_{param1}_{param2}_{param3}"
+            model_dir = os.path.join(save_dir, model_name)
+            os.makedirs(model_dir, exist_ok=True)
+
+            save_predictions(predictions, os.path.join(model_dir, f"predictions.csv"))
+            save_model_metadata(model, auc, os.path.join(model_dir, f"metadata.json"))
+
+    print("✅ Logistic Regression grid search completed.")
 
 
 # Decision Tree
 
 def manual_grid_search_dt(train_df, test_df, save_dir="../output/dt/"):
-    """
-    Manually trains Decision Tree with different hyperparameters, saves model outputs after each model.
-    """
-
     print("🚀 Starting Manual Decision Tree grid search...")
 
+    mlflow.set_tracking_uri("http://localhost:5000")
+    mlflow.set_experiment("dt")
+
     param_grid = [
-        (5, 32),
-        (10, 32),
-        (20, 32),
-        (5, 64),
-        (10, 64)
-    ]  # (maxDepth, maxBins)
+        (5, 32), (10, 32), (20, 32), (5, 64), (10, 64)
+    ]
 
     evaluator = BinaryClassificationEvaluator(labelCol="label")
-
     os.makedirs(save_dir, exist_ok=True)
     results_csv = os.path.join(save_dir, "grid_search_results.csv")
 
     if os.path.exists(results_csv):
         df_results = pd.read_csv(results_csv)
-        tried_params = set(zip(df_results['maxDepth'], df_results['maxBins']))
+        tried_params = set(zip(df_results['param1'], df_results['param2']))
     else:
-        df_results = pd.DataFrame(columns=["maxDepth", "maxBins", "AUC"])
+        df_results = pd.DataFrame(columns=["param1", "param2", "AUC"])
         tried_params = set()
 
-    for maxDepth, maxBins in param_grid:
-        if (maxDepth, maxBins) in tried_params:
-            print(f"⏩ Skipping already trained: maxDepth={maxDepth}, maxBins={maxBins}")
+    for param1, param2 in param_grid:
+        if (param1, param2) in tried_params:
+            print(f"⏩ Skipping: param1={param1}, param2={param2}")
             continue
 
-        print(f"🔵 Training: maxDepth={maxDepth}, maxBins={maxBins}")
+        print(f"🔵 Training: param1={param1}, param2={param2}")
 
-        dt = DecisionTreeClassifier(featuresCol="features", labelCol="label",
-                                    maxDepth=maxDepth, maxBins=maxBins)
-        model = dt.fit(train_df)
-        predictions = model.transform(test_df)
-        auc = evaluator.evaluate(predictions)
-        print(f"🔹 AUC: {auc:.4f}")
+        with mlflow.start_run():
+            mlflow.log_param("param1", param1)
+            mlflow.log_param("param2", param2)
 
-        new_row = pd.DataFrame([[maxDepth, maxBins, auc]], columns=["maxDepth", "maxBins", "AUC"])
-        df_results = pd.concat([df_results, new_row], ignore_index=True)
-        df_results.to_csv(results_csv, index=False)
+            dt = DecisionTreeClassifier(featuresCol="features", labelCol="label",
+                                        maxDepth=param1, maxBins=param2)
+            model = dt.fit(train_df)
+            predictions = model.transform(test_df)
+            auc = evaluator.evaluate(predictions)
+            mlflow.log_metric("auc", float(auc))
+            mlflow.spark.log_model(model, artifact_path="spark-model")
 
-        model_name = f"dt_{maxDepth}_{maxBins}"
-        model_dir = os.path.join(save_dir, model_name)
-        os.makedirs(model_dir, exist_ok=True)
+            print(f"✔ Logged run with AUC={auc:.4f}")
 
-        save_predictions(predictions, os.path.join(model_dir, f"predictions.csv"))
-        save_feature_importances(model, os.path.join(model_dir, f"feature_importances.csv"))
-        save_model_metadata(model, auc, os.path.join(model_dir, f"metadata.json"))
+            new_row = pd.DataFrame([[param1, param2, auc]],
+                                   columns=["param1", "param2", "AUC"])
+            df_results = pd.concat([df_results, new_row], ignore_index=True)
+            df_results.to_csv(results_csv, index=False)
 
-    print("\n✅ Manual Grid Search Complete for Decision Tree!")
+            model_name = f"dt_{param1}_{param2}"
+            model_dir = os.path.join(save_dir, model_name)
+            os.makedirs(model_dir, exist_ok=True)
+
+            save_predictions(predictions, os.path.join(model_dir, f"predictions.csv"))
+            save_feature_importances(model, os.path.join(model_dir, f"feature_importances.csv"))
+            save_model_metadata(model, auc, os.path.join(model_dir, f"metadata.json"))
+
+    print("✅ Decision Tree grid search completed.")
 
 
 # Naive Bayes
 
 def manual_grid_search_nb(train_df, test_df, save_dir="../output/nb/"):
-    """
-    Manually trains Naive Bayes with different hyperparameters, saves model outputs after each model.
-    """
-
     print("🚀 Starting Manual Naive Bayes grid search...")
+
+    mlflow.set_tracking_uri("http://localhost:5000")
+    mlflow.set_experiment("nb")
 
     param_grid = [
         (1.0, "multinomial"),
         (0.5, "multinomial"),
         (2.0, "multinomial")
-    ]  # (smoothing, modelType)
+    ]
 
     evaluator = BinaryClassificationEvaluator(labelCol="label")
-
     os.makedirs(save_dir, exist_ok=True)
     results_csv = os.path.join(save_dir, "grid_search_results.csv")
 
     if os.path.exists(results_csv):
         df_results = pd.read_csv(results_csv)
-        tried_params = set(zip(df_results['smoothing'], df_results['modelType']))
+        tried_params = set(zip(df_results['param1'], df_results['param2']))
     else:
-        df_results = pd.DataFrame(columns=["smoothing", "modelType", "AUC"])
+        df_results = pd.DataFrame(columns=["param1", "param2", "AUC"])
         tried_params = set()
 
-    for smoothing, modelType in param_grid:
-        if (smoothing, modelType) in tried_params:
-            print(f"⏩ Skipping already trained: smoothing={smoothing}, modelType={modelType}")
+    for param1, param2 in param_grid:
+        if (param1, param2) in tried_params:
+            print(f"⏩ Skipping: param1={param1}, param2={param2}")
             continue
 
-        print(f"🔵 Training: smoothing={smoothing}, modelType={modelType}")
+        print(f"🔵 Training: param1={param1}, param2={param2}")
 
-        nb = NaiveBayes(featuresCol="features", labelCol="label",
-                        smoothing=smoothing, modelType=modelType)
-        model = nb.fit(train_df)
-        predictions = model.transform(test_df)
-        auc = evaluator.evaluate(predictions)
-        print(f"🔹 AUC: {auc:.4f}")
+        with mlflow.start_run():
+            mlflow.log_param("param1", param1)
+            mlflow.log_param("param2", param2)
 
-        new_row = pd.DataFrame([[smoothing, modelType, auc]], columns=["smoothing", "modelType", "AUC"])
-        df_results = pd.concat([df_results, new_row], ignore_index=True)
-        df_results.to_csv(results_csv, index=False)
+            nb = NaiveBayes(featuresCol="features", labelCol="label",
+                            smoothing=param1, modelType=param2)
+            model = nb.fit(train_df)
+            predictions = model.transform(test_df)
+            auc = evaluator.evaluate(predictions)
+            mlflow.log_metric("auc", float(auc))
+            mlflow.spark.log_model(model, artifact_path="spark-model")
 
-        model_name = f"nb_{smoothing}_{modelType}"
-        model_dir = os.path.join(save_dir, model_name)
-        os.makedirs(model_dir, exist_ok=True)
+            print(f"✔ Logged run with AUC={auc:.4f}")
 
-        save_predictions(predictions, os.path.join(model_dir, f"predictions.csv"))
-        save_model_metadata(model, auc, os.path.join(model_dir, f"metadata.json"))
+            new_row = pd.DataFrame([[param1, param2, auc]],
+                                   columns=["param1", "param2", "AUC"])
+            df_results = pd.concat([df_results, new_row], ignore_index=True)
+            df_results.to_csv(results_csv, index=False)
 
-    print("\n✅ Manual Grid Search Complete for Naive Bayes!")
+            model_name = f"nb_{param1}_{param2}"
+            model_dir = os.path.join(save_dir, model_name)
+            os.makedirs(model_dir, exist_ok=True)
+
+            save_predictions(predictions, os.path.join(model_dir, f"predictions.csv"))
+            save_model_metadata(model, auc, os.path.join(model_dir, f"metadata.json"))
+
+    print("✅ Naive Bayes grid search completed.")
 
 
 # Gradient Boost
 
 def manual_grid_search_gbt(train_df, test_df, save_dir="../output/gbt/"):
     """
-    Manually trains GBTClassifier with different hyperparameters, saves model outputs after each model.
+    Trains GBTClassifier with multiple hyperparameters, logs models using MLflow, and saves results.
     """
 
     print("🚀 Starting Manual GBTClassifier grid search...")
+
+    # MLflow setup
+    mlflow.set_tracking_uri("http://localhost:5000")
+    mlflow.set_experiment("gbt")
 
     param_grid = [
         (50, 5, 32),
@@ -312,35 +328,44 @@ def manual_grid_search_gbt(train_df, test_df, save_dir="../output/gbt/"):
 
     if os.path.exists(results_csv):
         df_results = pd.read_csv(results_csv)
-        tried_params = set(zip(df_results['maxIter'], df_results['maxDepth'], df_results['maxBins']))
+        tried_params = set(zip(df_results['param1'], df_results['param2'], df_results['param3']))
     else:
-        df_results = pd.DataFrame(columns=["maxIter", "maxDepth", "maxBins", "AUC"])
+        df_results = pd.DataFrame(columns=["param1", "param2", "param3", "AUC"])
         tried_params = set()
 
-    for maxIter, maxDepth, maxBins in param_grid:
-        if (maxIter, maxDepth, maxBins) in tried_params:
-            print(f"⏩ Skipping already trained: maxIter={maxIter}, maxDepth={maxDepth}, maxBins={maxBins}")
+    for param1, param2, param3 in param_grid:
+        if (param1, param2, param3) in tried_params:
+            print(f"⏩ Skipping already trained: param1={param1}, param2={param2}, param3={param3}")
             continue
 
-        print(f"🔵 Training: maxIter={maxIter}, maxDepth={maxDepth}, maxBins={maxBins}")
+        print(f"🔵 Training: param1={param1}, param2={param2}, param3={param3}")
 
-        gbt = GBTClassifier(featuresCol="features", labelCol="label",
-                            maxIter=maxIter, maxDepth=maxDepth, maxBins=maxBins)
-        model = gbt.fit(train_df)
-        predictions = model.transform(test_df)
-        auc = evaluator.evaluate(predictions)
-        print(f"🔹 AUC: {auc:.4f}")
+        with mlflow.start_run():
+            mlflow.log_param("param1", param1)
+            mlflow.log_param("param2", param2)
+            mlflow.log_param("param3", param3)
 
-        new_row = pd.DataFrame([[maxIter, maxDepth, maxBins, auc]], columns=["maxIter", "maxDepth", "maxBins", "AUC"])
-        df_results = pd.concat([df_results, new_row], ignore_index=True)
-        df_results.to_csv(results_csv, index=False)
+            gbt = GBTClassifier(featuresCol="features", labelCol="label",
+                                maxIter=param1, maxDepth=param2, maxBins=param3)
+            model = gbt.fit(train_df)
+            predictions = model.transform(test_df)
+            auc = evaluator.evaluate(predictions)
+            mlflow.log_metric("auc", float(auc))
+            mlflow.spark.log_model(model, artifact_path="spark-model")
 
-        model_name = f"gbt_{maxIter}_{maxDepth}_{maxBins}"
-        model_dir = os.path.join(save_dir, model_name)
-        os.makedirs(model_dir, exist_ok=True)
+            print(f"✔ Logged run with AUC={auc:.4f}")
 
-        save_predictions(predictions, os.path.join(model_dir, f"predictions.csv"))
-        save_feature_importances(model, os.path.join(model_dir, f"feature_importances.csv"))
-        save_model_metadata(model, auc, os.path.join(model_dir, f"metadata.json"))
+            # Save locally too
+            new_row = pd.DataFrame([[param1, param2, param3, auc]], columns=["param1", "param2", "param3", "AUC"])
+            df_results = pd.concat([df_results, new_row], ignore_index=True)
+            df_results.to_csv(results_csv, index=False)
+
+            model_name = f"gbt_{param1}_{param2}_{param3}"
+            model_dir = os.path.join(save_dir, model_name)
+            os.makedirs(model_dir, exist_ok=True)
+
+            save_predictions(predictions, os.path.join(model_dir, f"predictions.csv"))
+            save_feature_importances(model, os.path.join(model_dir, f"feature_importances.csv"))
+            save_model_metadata(model, auc, os.path.join(model_dir, f"metadata.json"))
 
     print("\n✅ Manual Grid Search Complete for GBTClassifier!")
