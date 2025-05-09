@@ -36,26 +36,34 @@ def pick_best_model_from_grid(results_csv_path, base_save_dir):
 
     best_model_params = ""
     for col in df.columns:
-        best_model_params += str(int(best_row[col])) + "_"
+        if col != "AUC" and col != "PR_AUC":
+            best_model_params += str(int(best_row[col])) + "_"
     
     best_model_params = best_model_params[:-1]
 
     model_dir = os.path.join(base_save_dir, best_model_params)
 
-    paths = {
-        "predictions": os.path.join(model_dir, f"predictions.csv"),
-        "feature_importances": os.path.join(model_dir, f"feature_importances.csv"),
-        "metadata": os.path.join(model_dir, f"metadata.json"),
-        "model_name": best_model_params,
-        "AUC": best_row["AUC"]
-    }
-
     print(f"🏆 Best Model: {best_model_params} with AUC: {best_row['AUC']:.4f}")
 
     MLFLow_model_name = str(base_save_dir.split('/')[2])
 
-    # returns like "50_5_32_0,0.9996,rf"
+    # returns like "50_5_32_0,0.9996,rf,0.989"
     return str(best_model_params) +"," + str(best_row['AUC']) + "," + MLFLow_model_name + "," + str(best_row['PR_AUC'])
+
+# Pick best category model
+def pick_best_category_model_from_grid(results_csv_path):
+    
+    df = pd.read_csv(results_csv_path)
+    best_row = df.loc[df['accuracy'].idxmax()]
+
+    best_model_params = best_row["params"]
+
+    print(f"🏆 Best Model: {best_model_params} with accuracy: {best_row['accuracy']:.4f}")
+
+    MLFLow_model_name = best_row["model"]
+
+    # returns like "50_5_32,0.9996,rf"
+    return str(best_model_params) +"," + str(best_row['accuracy']) + "," + str(MLFLow_model_name)
 
 # Random Forest
 
@@ -414,12 +422,6 @@ def manual_grid_search_category(train_df, test_df, save_dir="../output/category/
             "param_names": ["maxIter"]
         },
         {
-            "name": "gbt",
-            "estimator": GBTClassifier,
-            "params": [(50, 5), (100, 10)],
-            "param_names": ["maxIter", "maxDepth"]
-        },
-        {
             "name": "dt",
             "estimator": DecisionTreeClassifier,
             "params": [(5,), (10,)],
@@ -438,7 +440,8 @@ def manual_grid_search_category(train_df, test_df, save_dir="../output/category/
 
     for config in param_configs:
         for param_set in config["params"]:
-            param_key = (config["name"], str(param_set))
+            param_key = (config["name"],"_".join(map(str, param_set)))
+            
             if param_key in tried:
                 print(f"⏩ Skipping {param_key}")
                 continue
@@ -448,8 +451,8 @@ def manual_grid_search_category(train_df, test_df, save_dir="../output/category/
                 # Set up model with dynamic kwargs
                 kwargs = dict(zip(config["param_names"], param_set))
                 model = config["estimator"](
-                    labelCol="label", featuresCol="features", **kwargs
-                )
+                        labelCol="label", featuresCol="features", **kwargs)
+
                 mlflow.log_params(kwargs)
                 mlflow.log_param("model", config["name"])
 
@@ -470,7 +473,7 @@ def manual_grid_search_category(train_df, test_df, save_dir="../output/category/
                 if hasattr(trained_model, "featureImportances"):
                     save_feature_importances(trained_model, os.path.join(model_dir, f"feature_importances.csv"))
 
-                new_row = pd.DataFrame([[config["name"], str(param_set), acc]],
+                new_row = pd.DataFrame([[config["name"], "_".join(map(str, param_set)), acc]],
                                        columns=["model", "params", "accuracy"])
                 df_results = pd.concat([df_results, new_row], ignore_index=True)
                 df_results.to_csv(results_csv, index=False)

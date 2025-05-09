@@ -13,9 +13,8 @@ def save_predictions(predictions_df, output_path):
 
     cleaned = predictions_df.withColumn("probability_class1", extract_prob(col("probability")))
 
-    # NEW — skip main_category_ohe for category prediction model
     selected_cols = [col for col in [
-        "user_session", "num_views", "num_cart_adds", "label", "prediction", "probability_class1", "session_duration", "avg_price", "unique_categories"
+        "user_session", "num_views", "num_cart_adds", "label", "prediction", "probability_class1", "session_duration", "avg_price", "main_category_ohe" ,"unique_categories"
     ] if col in predictions_df.columns]
 
 

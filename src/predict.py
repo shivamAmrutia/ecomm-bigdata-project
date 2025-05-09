@@ -5,7 +5,30 @@ import pandas as pd
 import json
 
 # Start Spark
-spark = SparkSession.builder.appName("StreamlitGBT").getOrCreate()
+spark = SparkSession.builder.appName("Streamlit_Predict").getOrCreate()
+
+# Dynamically get category index-to-name mapping from training metadata or source
+category_mapping_df = pd.read_csv("./output/category/category_index_mapping.csv")
+category_index_to_name = dict(zip(category_mapping_df['index'], category_mapping_df['category']))
+
+def predict_category(num_views, num_cart_adds, session_duration, avg_price):
+    mlflow.set_tracking_uri("http://localhost:5000")
+    experiment = mlflow.get_experiment_by_name("category")
+    runs_df = mlflow.search_runs(experiment_ids=[experiment.experiment_id], order_by=["metrics.accuracy DESC"])
+
+    if runs_df.empty:
+        return "N/A"
+
+    best_run_id = runs_df.iloc[0]["run_id"]
+    model_uri = f"runs:/{best_run_id}/spark-model"
+    model = mlflow.spark.load_model(model_uri)
+
+    # Create input DataFrame
+    features = [float(num_views), float(num_cart_adds), 0.0, float(avg_price), float(session_duration), 1.0]
+    df = spark.createDataFrame([(Vectors.dense(features),)], ["features"])
+
+    prediction = model.transform(df).select("prediction").first()[0]
+    return category_index_to_name.get(int(prediction), "unknown")
 
 def predict_purchase(num_views, num_cart_adds, session_duration, avg_price, selected_category, model, params):
     
