@@ -56,9 +56,59 @@ assembler = VectorAssembler(inputCols=feature_cols, outputCol="features")
 assembled_df = assembler.transform(session_features)
 
 
-#load pretrained models
-model_1_uri = "runs:/<your_run_id_1>/spark-model" 
-model_2_uri = "runs:/<your_run_id_2>/spark-model" 
+#explicitly state the load folder
+mlflow.set_tracking_uri("http://localhost:5000")
+
+
+# Load best run from the "conversion" experiment (Model 1)
+# conversion_exp = mlflow.get_experiment_by_name("rf")
+# if conversion_exp is None:
+#     raise ValueError("Experiment 'conversion' not found")
+
+# runs_df = mlflow.search_runs([conversion_exp.experiment_id], order_by=["metrics.accuracy DESC"])
+
+# # Iterate over runs to skip any broken ones
+# model_1 = None
+# for i in range(len(runs_df)):
+#     try:
+#         run_id = runs_df.iloc[i]["run_id"]
+#         model_uri = f"runs:/{run_id}/spark-model/sparkml"
+#         model_1 = mlflow.spark.load_model(model_uri)
+#         print(f" Loaded Model 1 from run: {run_id}")
+#         break
+#     except Exception as e:
+#         print(f" Skipping run {run_id}: {e}")
+
+# if model_1 is None:
+#     raise RuntimeError(" No valid model found in 'conversion' experiment")
+
+
+# category_exp = mlflow.get_experiment_by_name("category")
+# if conversion_exp is None:
+#     raise ValueError("Experiment 'category' not found")
+
+# runs_df = mlflow.search_runs([conversion_exp.experiment_id], order_by=["metrics.accuracy DESC"])
+
+# # Iterate over runs to skip any broken ones
+# model_2 = None
+# for i in range(len(runs_df)):
+#     try:
+#         run_id = runs_df.iloc[i]["run_id"]
+#         model_uri = f"runs:/{run_id}/spark-model/sparkml"
+#         model_1 = mlflow.spark.load_model(model_uri)
+#         print(f" Loaded Model 1 from run: {run_id}")
+#         break
+#     except Exception as e:
+#         print(f" Skipping run {run_id}: {e}")
+
+# if model_1 is None:
+#     raise RuntimeError(" No valid model found in 'category' experiment")
+
+# load pretrained models
+model_1_uri = 'file:///D:/ecomm-bigdata-project/mlruns/2/14f4fc3af12a42dea4b56286c7caff7f/artifacts/spark-model/sparkml'
+model_2_uri = 'file:///D:/ecomm-bigdata-project/mlruns/3/3647e08da90e4334b58a7e1490d9e9f1/artifacts/spark-model/sparkml'
+# model_1_uri = "runs:/14f4fc3af12a42dea4b56286c7caff7f/spark-model" 
+# model_2_uri = "runs:/3647e08da90e4334b58a7e1490d9e9f1/spark-model" 
 
 model_1 = mlflow.spark.load_model(model_1_uri)
 model_2 = mlflow.spark.load_model(model_2_uri)
