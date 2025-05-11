@@ -48,7 +48,8 @@ def predict_purchase(num_views, num_cart_adds, session_duration, avg_price, sele
     spark_model = mlflow.spark.load_model(model_uri)
 
     # Labels must match the StringIndexer used during training
-    category_labels = ['electronics', 'furniture', 'computers', 'kids', 'sport', 'appliances', 'auto', 'unknown']
+    category_labels_df = pd.read_csv("./output/model1_index_mapping.csv")
+    category_labels = category_labels_df.sort_values("index")["category"].tolist()
     
     # One-hot encode selected_category
     ohe_vector = [0.0] * len(category_labels)
