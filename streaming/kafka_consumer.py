@@ -11,7 +11,56 @@ from pyspark.sql import SparkSession
 from pyspark.ml.feature import VectorAssembler
 from pyspark.ml.linalg import SparseVector
 
+def load_best_model(experiment_name: str,
+                    metric_name: str,
+                    tracking_uri: str,
+                    params:str,
+                    artifact_path: str = "spark-model"):
+    """
+    Fetch the run with the best `metric_name` in the given experiment,
+    then load and return its PyFunc model artifact.
+    """
+    # client = MlflowClient()
+    # exp = client.get_experiment_by_name(experiment_name)
+    # if exp is None:
+    #     raise ValueError(f"Experiment '{experiment_name}' not found")
+
+    # # Search runs, ordering by metric descending (or ascending)
+    # order = f"metrics.{metric_name} {'DESC' if maximize else 'ASC'}"
+    # runs = client.search_runs(
+    #     [exp.experiment_id],
+    #     order_by=[order],
+    #     max_results=1
+    # )
+    # if not runs:
+    #     raise ValueError(f"No runs found in '{experiment_name}'")
+    mlflow.set_tracking_uri(tracking_uri)
+    
+    if params:
+        experiment = mlflow.get_experiment_by_name(experiment_name)
+        runs_main_df = mlflow.search_runs(experiment_ids=[experiment.experiment_id])
+        param1, param2, param3 = params.split('_')
+        runs_df = runs_main_df[
+        (runs_main_df['params.param1'] == param1) &
+        (runs_main_df['params.param2'] == param2) &
+        (runs_main_df['params.param3'] == param3)
+        ]
+    
+    else:
+        experiment = mlflow.get_experiment_by_name(experiment_name)
+        runs_df = mlflow.search_runs(experiment_ids=[experiment.experiment_id], order_by=[f"metrics.{metric_name} DESC"])
+
+    if runs_df.empty:
+        return "N/A"
+
+    run_id = runs_df.iloc[0]["run_id"]
+    uri = f"runs:/{run_id}/{artifact_path}"
+    print(f"> Loading best run {run_id} ( {metric_name} = {metric_name} )")
+    return mlflow.pyfunc.load_model(uri)
+
+
 spark = SparkSession.builder.appName("KafkaConsumerVectorAssembly").getOrCreate()
+
 
 # Kafka setup
 consumer = KafkaConsumer(
@@ -32,9 +81,28 @@ collection = db["streamed_predictions"]
 session_buffer = defaultdict(list)
 
 # Load pretrained MLflow models
-mlflow.set_tracking_uri("file:///D:/ecomm-bigdata-project/mlruns")
-model_1 = mlflow.pyfunc.load_model("file:///D:/ecomm-bigdata-project/mlruns/2/14f4fc3af12a42dea4b56286c7caff7f/artifacts/spark-model")
-model_2 = mlflow.pyfunc.load_model("file:///D:/ecomm-bigdata-project/mlruns/3/3647e08da90e4334b58a7e1490d9e9f1/artifacts/spark-model")
+# mlflow.set_tracking_uri("file:///D:/ecomm-bigdata-project/mlruns")
+# model_1 = mlflow.pyfunc.load_model("file:///D:/ecomm-bigdata-project/mlruns/2/14f4fc3af12a42dea4b56286c7caff7f/artifacts/spark-model")
+# model_2 = mlflow.pyfunc.load_model("file:///D:/ecomm-bigdata-project/mlruns/3/3647e08da90e4334b58a7e1490d9e9f1/artifacts/spark-model")
+
+# use MLflow to pick the best for each experiment:
+with open("../output/best_params.json") as f:
+    best_model_and_params = json.load(f)
+    model_1_name = best_model_and_params.get("model")
+    params = best_model_and_params.get("params")
+
+model_1 = load_best_model(
+    experiment_name=model_1_name,
+    metric_name="auc",
+    tracking_uri="http://localhost:5000",
+    params=params,
+)
+model_2 = load_best_model(
+    experiment_name="category", 
+    metric_name="accuracy",
+    tracking_uri="http://localhost:5000",          # or f1 / weightedPrecision, etc.
+    params=None
+)
 
 # Load category label mapping if available
 try:
@@ -145,6 +213,48 @@ def prepare_features_for_model1(row_dict, main_category, category_labels, spark)
     # Return as pandas DataFrame with just 'features' column
     return final_df.select("features").toPandas()
 
+def prepare_features_for_model2(row_dict, spark):
+    """
+    Mirrors training feature assembly for model 2.
+    
+    Parameters:
+    - row_dict: dict with raw numeric values
+    - spark: active SparkSession
+    
+    Returns:
+    - pandas DataFrame with a single 'features' column matching model input
+    """
+    # 1) Build the raw dict of numeric inputs exactly as in your training pipeline
+    raw_row = {
+        "num_views": float(row_dict.get("num_views", 0)),
+        "num_cart_adds": float(row_dict.get("num_cart_adds", 0)),
+        "num_purchases": float(row_dict.get("num_purchases", 1.0)),
+        "avg_price": float(row_dict.get("avg_price", 0)),
+        "session_duration": float(row_dict.get("session_duration", 0)),
+        "unique_categories": float(row_dict.get("unique_categories", 1.0))
+    }
+
+    # 2) Convert to a Spark DataFrame
+    temp_df = spark.createDataFrame([raw_row])
+
+    # 3) Assemble all numeric columns into the 'features' vector
+    assembler = VectorAssembler(
+        inputCols=[
+            "num_views",
+            "num_cart_adds",
+            "num_purchases",
+            "avg_price",
+            "session_duration",
+            "unique_categories",
+        ],
+        outputCol="features"
+    )
+    final_df = assembler.transform(temp_df)
+
+    # 4) Return just the features column as pandas, for your pyfunc wrapper
+    return final_df.select("features").toPandas()
+
+
 
 
 print(" Kafka consumer running...")
@@ -164,6 +274,7 @@ for msg in consumer:
         # features_df["features_model1"] = [assemble_features_model1(row, main_category)]
         # features_df["features_model2"] = [assemble_features_model2(row)]
         input_df_1 = prepare_features_for_model1(row, main_category, category_labels_1, spark)
+        input_df_2 = prepare_features_for_model2(row, spark)
 
         try:
             # input_df_1 = features_df[["features_model1"]].rename(columns={"features_model1": "features"})
@@ -175,10 +286,15 @@ for msg in consumer:
             # print("Label count for Model 1:", len(category_labels_1))
 
 
-            purchase_prob = model_1.predict(input_df_1)[0]
-            # cat_probs = model_2.predict(input_df_2)[0]
-            # top3 = list(np.argsort(cat_probs)[::-1][:3])
-            # top3_categories = [label_mapping[int(i)] if i < len(label_mapping) else "unknown" for i in top3]
+            purchase_prob_np = model_1.predict(input_df_1)[0]
+            cat_probs = model_2.predict(input_df_2)[0]
+            top3 = np.argsort(cat_probs)[::-1][:3].tolist()
+            top3_categories = [label_mapping[int(i)] if i < len(label_mapping) else "unknown" for i in top3]
+
+            #turn logging values into native data types
+            purchase_prob = float(purchase_prob_np)
+            
+
         except Exception as e:
             print(f"[ERROR] Prediction failed: {e}")
             continue
@@ -187,8 +303,8 @@ for msg in consumer:
             "user_session": session_id,
             "features": features_df.to_dict(orient="records")[0],
             "purchase_prob": purchase_prob,
-            # "top3_category_indices": top3,
-            # "top3_categories": top3_categories,
+            "top3_category_indices": top3,
+            "top3_categories": top3_categories,
             "timestamp": time.time()
         }
 

@@ -47,8 +47,8 @@ with tab1:
         st.markdown("<h5 style='text-align: center;'>Predicted Probabilities</h5>", unsafe_allow_html=True)
         st.image("./output/figures/purchase_probability.png", use_column_width=True)
 
-        st.markdown("<h5 style='text-align: center;'>Session Duration vs Purchase</h5>", unsafe_allow_html=True)
-        st.image("./output/figures/session_duration_vs_purchase.png", use_column_width=True)
+        st.markdown("<h5 style='text-align: center;'>Purchase Behavior on Session Duration vs Avg Price</h5>", unsafe_allow_html=True)
+        st.image("./output/figures/purchase_on_duration_vs_avg_price.png", use_column_width=True)
 
         st.markdown("<h5 style='text-align: center;'>Price Sensitivity</h5>", unsafe_allow_html=True)
         st.image("./output/figures/price_vs_purchase.png", use_column_width=True)
