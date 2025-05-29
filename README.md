@@ -22,26 +22,28 @@ This project analyzes customer interaction data on an e-commerce platform using 
 
 ## 🗂️ Project Structure
 
+```
 ecommerce-bigdata-project/
 │
-├── data/                       # Raw dataset (e.g., 2019-Nov.csv)
+├── data/                         # Raw dataset (e.g., 2019-Nov.csv)
 │
-├── notebooks/                  # Exploratory notebooks (funnel analysis, EDA)
+├── notebooks/                    # Exploratory notebooks (EDA, funnel analysis)
 │   └── exploration.ipynb
 │
-├── src/                        # Modular source code
-│   ├── preprocessing.py        # Data cleaning, feature engineering
-│   ├── model.py                # Model training, manual grid search
-│   ├── mongo_export.py         # MongoDB session export, browsing, deletion
-│   ├── streaming_consumer.py   # Kafka consumer + inference pipeline
-│   └── save_outputs.py         # Utility for saving predictions and metadata
+├── src/                          # Modular source code
+│   ├── preprocessing.py          # Data cleaning & feature engineering
+│   ├── model.py                  # ML model training & manual grid search
+│   ├── mongo_export.py           # MongoDB session export, fetch, delete
+│   ├── streaming_consumer.py     # Kafka consumer + Spark inference
+│   └── save_outputs.py           # Save predictions, categories, metadata
 │
-├── output/                     # Generated outputs
-│   ├── predictions.csv         # Final purchase intent predictions
-│   ├── figures/                # Funnel plots and analytics charts
-│   └── category/               # Top-k category prediction outputs
+├── output/                       # Output files
+│   ├── predictions.csv           # Binary intent predictions
+│   ├── figures/                  # Funnel plots & analytics charts
+│   └── category/                 # Multi-label category prediction outputs
 │
-├── models/                     # Trained MLflow models (purchase + category)
+├── models/                       # MLflow-registered models
 │
-├── requirements.txt            # Python dependencies
-└── README.md                   # This file
+├── requirements.txt              # Required Python packages
+└── README.md                     # Project documentation (this file)
+```
