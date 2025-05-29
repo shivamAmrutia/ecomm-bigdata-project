@@ -10,33 +10,35 @@ producer = KafkaProducer(
 
 print("🚀 Starting Kafka Producer")
 
-csv_path = "../data/2019-Nov.csv"
+csv_path = "../data/streamingData/streamingData.csv"
 chunk_size = 1000
 
 def row_to_json(row):
     return json.dumps({
-        "user_id": row.get("user_id"),
-        "product_id": row.get("product_id"),
-        "category_id": row.get("category_id"),
-        "category_code": row.get("category_code"),
-        "brand": row.get("brand"),
-        "price": row.get("price"),
-        "event_time": row.get("event_time"),
-        "event_type": row.get("event_type"),
-        "user_session": row.get("user_session")
+        "user_session": row.get("user_session"),
+        "num_views": row.get("num_views"),
+        "num_cart_adds": row.get("num_cart_adds"),
+        "num_purchases": row.get("num_purchases"),
+        "session_start": row.get("session_start"),
+        "session_end": row.get("session_end"),
+        "avg_price": row.get("avg_price"),
+        "session_duration": row.get("session_duration"),
+        "main_category": row.get("main_category"),
+        "unique_categories": row.get("unique_categories"),
+        "label_category": row.get("label_category")
     })
 
 chunk_iter = pd.read_csv(csv_path, chunksize=chunk_size)
 
 for chunk_num, chunk in enumerate(chunk_iter):
-    chunk = chunk.dropna(subset=["user_id", "product_id", "event_type", "event_time", "user_session"])
+    chunk = chunk.dropna(subset=["user_session", "main_category"])
     print(f"📦 Processing chunk {chunk_num} with {len(chunk)} rows")
 
     for idx, row in chunk.iterrows():
         msg = row_to_json(row)
         producer.send("ecommerce_events", value=msg)
         print(f"🟢 Sent: {msg}")
-        time.sleep(0.05)  # Adjust rate as needed
+        time.sleep(1)  # Adjust rate as needed
 
 producer.flush()
 producer.close()

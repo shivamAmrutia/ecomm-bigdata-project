@@ -116,17 +116,22 @@ category_labels_1 = ['electronics', 'appliances', 'computers', 'apparel', 'furni
 
 def extract_features(events):
     df = pd.DataFrame(events)
-    num_views = (df["event_type"] == "view").sum()
-    num_cart_adds = (df["event_type"] == "cart").sum()
-    avg_price = df["price"].mean()
-    timestamps = pd.to_datetime(df["event_time"])
-    session_duration = (timestamps.max() - timestamps.min()).total_seconds()
+    
+    def safe_scalar(series, default=0):
+        if isinstance(series, pd.Series):
+            return float(series.iloc[0]) if not series.empty else default
+        return float(series)
+
     return pd.DataFrame([{
-        "num_views": num_views,
-        "num_cart_adds": num_cart_adds,
-        "avg_price": avg_price,
-        "session_duration": session_duration
+        "num_views": safe_scalar(df["num_views"], 0),
+        "num_cart_adds": safe_scalar(df["num_cart_adds"], 0),
+        "avg_price": safe_scalar(df["avg_price"], 0),
+        "session_duration": safe_scalar(df["session_duration"], 0),
+        "num_purchases": safe_scalar(df["num_purchases"], 0),
+        "unique_categories": safe_scalar(df["unique_categories"], 1.0),
+        "main_category": str(df["main_category"].iloc[0]) if not df["main_category"].empty else "unknown"
     }])
+
 
 def assemble_features_model1(row_dict, main_category):
     return Vectors.dense(
@@ -163,7 +168,7 @@ def spark_style_one_hot(index, size):
     """
     if index is None or index < 0 or index >= size:
         return SparseVector(size, [], [])
-    return SparseVector(size, [index], [1.0])
+    return SparseVector(size-1, [index], [1.0])
 
 
 def prepare_features_for_model1(row_dict, main_category, category_labels, spark):
@@ -180,6 +185,7 @@ def prepare_features_for_model1(row_dict, main_category, category_labels, spark)
     - pandas DataFrame with a single 'features' column matching model input
     """
     # One-hot encode manually (same as OneHotEncoder with dropLast=True)
+    print(main_category)
     index = category_labels.index(main_category) if main_category in category_labels else -1
     ohe_vector = spark_style_one_hot(index, len(category_labels))
 
@@ -192,6 +198,8 @@ def prepare_features_for_model1(row_dict, main_category, category_labels, spark)
         "unique_categories": float(row_dict.get("unique_categories", 1.0)),
         "main_category_ohe": ohe_vector
     }
+
+    print(raw_row)
 
     # Create Spark DataFrame
     temp_df = spark.createDataFrame([raw_row])
@@ -234,6 +242,8 @@ def prepare_features_for_model2(row_dict, spark):
         "unique_categories": float(row_dict.get("unique_categories", 1.0))
     }
 
+    print(raw_row)
+
     # 2) Convert to a Spark DataFrame
     temp_df = spark.createDataFrame([raw_row])
 
@@ -263,12 +273,10 @@ for msg in consumer:
     event = msg.value
     session_id = event.get("user_session")
     session_buffer[session_id].append(event)
-
-    if len(session_buffer[session_id]) >= 5:  # configurable threshold
+    if len(session_buffer[session_id]) >= 1:  # configurable threshold
         events = session_buffer.pop(session_id)
         features_df = extract_features(events)
-        cat_code = str(events[0].get("category_code") or "")
-        main_category = cat_code.split(".")[0] if "." in cat_code else "unknown"
+        main_category = str(events[0].get("main_category") or "unknown")
         row = features_df.iloc[0]
         # features_df = features_df.copy()
         # features_df["features_model1"] = [assemble_features_model1(row, main_category)]
